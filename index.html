@@ -588,9 +588,12 @@ function r9({ onNavigate, onNavigateMore }) {
         (0,k.jsx)(CalIc, { size: 15 }),
         (0,k.jsx)("span", { children: dateFull })
       ] }),
-      (0,k.jsxs)("button", { id: "wbnc-home-bell", className: "relative flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-muted", children: [
-        (0,k.jsx)(BellIc, { size: 16 }),
-        (0,k.jsx)("span", { id: "wbnc-home-dot", className: "absolute rounded-full bg-rust", style: { width: 7, height: 7, top: 7, right: 7 } })
+      (0,k.jsxs)("button", { id: "wbnc-home-bell", className: "relative flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3 py-2 text-[12px] font-medium text-ink-muted", children: [
+        (0,k.jsx)("span", { children: "Pesanan Online" }),
+        (0,k.jsxs)("span", { className: "relative flex h-4 w-4 shrink-0 items-center justify-center", children: [
+          (0,k.jsx)(BellIc, { size: 16 }),
+          (0,k.jsx)("span", { id: "wbnc-home-dot", className: "absolute rounded-full bg-rust", style: { width: 7, height: 7, top: -2, right: -2 } })
+        ] })
       ] })
     ] }),
     (0,k.jsxs)("div", { className: "mt-4 rounded-2xl border border-line bg-surface p-4 shadow-sm", children: [
