@@ -592,7 +592,7 @@ function r9({ onNavigate, onNavigateMore }) {
         (0,k.jsx)("span", { children: "Pesanan Online" }),
         (0,k.jsxs)("span", { className: "relative flex h-4 w-4 shrink-0 items-center justify-center", children: [
           (0,k.jsx)(BellIc, { size: 16 }),
-          (0,k.jsx)("span", { id: "wbnc-home-dot", className: "absolute rounded-full bg-rust", style: { width: 7, height: 7, top: -2, right: -2 } })
+          (0,k.jsx)("span", { id: "wbnc-home-dot", className: "absolute flex items-center justify-center rounded-full bg-rust font-bold leading-none text-white", style: { minWidth: 15, height: 15, top: -6, right: -7, padding: "0 3px", fontSize: 9 } })
         ] })
       ] })
     ] }),
@@ -933,7 +933,19 @@ if('serviceWorker' in navigator){
 
   function updateBadge(){
     var dot = dotEl();
-    if(dot) dot.style.display = pending.length > 0 ? '' : 'none';
+    if(dot){
+      // PENTING: dot.style.display = '' TIDAK bikin badge muncul -- itu cuma
+      // ngosongin inline style, jadi balik lagi ke rule CSS "#wbnc-home-dot{display:none}"
+      // di atas (makanya badge-nya kosong mulu walau ada pesanan masuk).
+      // Harus di-set eksplisit ke 'flex' biar bener2 override.
+      if(pending.length > 0){
+        dot.textContent = pending.length > 9 ? '9+' : String(pending.length);
+        dot.style.display = 'flex';
+      } else {
+        dot.textContent = '';
+        dot.style.display = 'none';
+      }
+    }
     var bell = bellEl();
     if(bell) bell.setAttribute('aria-label', pending.length > 0 ? ('Notifikasi pesanan online, ' + pending.length + ' menunggu') : 'Notifikasi pesanan online');
   }
@@ -943,6 +955,15 @@ if('serviceWorker' in navigator){
     if(!bell) return;
     bell.classList.remove('wbnc-ring'); void bell.offsetWidth; bell.classList.add('wbnc-ring');
   }
+
+  // Tombol bell & titiknya ke-unmount/remount tiap pindah-pindah tab (lihat
+  // catatan di atas). Tanpa ini, badge sempet "kosong" beberapa detik pas
+  // balik ke Beranda karena nunggu putaran poll berikutnya. Observer ini
+  // langsung nyamain badge ke state `pending` begitu elemen itu balik muncul.
+  var resyncObserver = new MutationObserver(function(){
+    if(dotEl()) updateBadge();
+  });
+  resyncObserver.observe(document.body, { childList: true, subtree: true });
 
   function beep(){
     try{
