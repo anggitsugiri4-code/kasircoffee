@@ -825,7 +825,13 @@ if('serviceWorker' in navigator){
 
   var sb = null; // dibikin pas dipakai, biar AppScriptClient udah pasti ke-load duluan
   function client(){
-    if(!sb && window.AppScriptClient) sb = new window.AppScriptClient();
+    if(!window.AppScriptClient) return null;
+    // FIX: kalau instance lama belum punya token (misal dibikin sebelum kasir
+    // kelar login), bikin ulang biar localStorage session yang terbaru
+    // (abis saveSession() jalan pas login sukses) kebaca. Tanpa ini, instance
+    // pertama yang ke-cache pas belum login bakal _token()-nya null selamanya
+    // walau kasir udah login di app utama.
+    if(!sb || !sb._token()) sb = new window.AppScriptClient();
     return sb;
   }
 
