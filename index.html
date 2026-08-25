@@ -821,15 +821,20 @@ if('serviceWorker' in navigator){
   /* ---------- styles (pakai css var tema app biar nyatu) ---------- */
   var style = document.createElement('style');
   style.textContent =
+    /* Sama persis kayak tombol bel notifikasi di Beranda (h-9 w-9 rounded-full
+       border border-line text-ink-muted + dot merah kecil), cuma dibuat pill
+       biar muat teks "Pesanan Online" di sampingnya. */
     '#wbnc-bell{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;z-index:9998;' +
-      'width:46px;height:46px;border-radius:9999px;border:1px solid hsl(var(--line));' +
-      'background:hsl(var(--surface-2));box-shadow:0 6px 18px rgba(0,0,0,.35);' +
-      'display:flex;align-items:center;justify-content:center;color:hsl(var(--ink));cursor:pointer;transition:transform .15s ease}' +
-    '#wbnc-bell:active{transform:scale(.92)}' +
-    '#wbnc-bell.wbnc-ring{animation:wbnc-ring .6s ease}' +
+      'display:flex;align-items:center;gap:7px;height:36px;padding:0 14px 0 11px;border-radius:9999px;' +
+      'border:1px solid hsl(var(--line));background:hsl(var(--surface));box-shadow:0 6px 18px rgba(0,0,0,.25);' +
+      'font-family:"Public Sans",system-ui,sans-serif;font-size:12px;font-weight:500;' +
+      'color:hsl(var(--ink-muted));cursor:pointer;transition:transform .15s ease}' +
+    '#wbnc-bell:active{transform:scale(.96)}' +
+    '.wbnc-icon-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center}' +
+    '#wbnc-bell.wbnc-ring .wbnc-icon-wrap{animation:wbnc-ring .6s ease}' +
     '@keyframes wbnc-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-18deg)}40%{transform:rotate(14deg)}60%{transform:rotate(-10deg)}80%{transform:rotate(6deg)}}' +
-    '#wbnc-badge{position:absolute;top:-2px;right:-2px;min-width:19px;height:19px;padding:0 4px;border-radius:9999px;' +
-      'background:hsl(var(--rust));color:#fff;font:700 11px/19px "Public Sans",sans-serif;text-align:center;box-shadow:0 0 0 2px hsl(var(--surface-2))}' +
+    '.wbnc-label{white-space:nowrap}' +
+    '#wbnc-badge{position:absolute;top:-1px;right:-1px;width:7px;height:7px;border-radius:9999px;background:hsl(var(--rust))}' +
     '#wbnc-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:14px;right:70px;z-index:9999;' +
       'display:flex;flex-direction:column;gap:8px;pointer-events:none}' +
     '.wbnc-toast{pointer-events:auto;background:hsl(var(--surface-2));border:1px solid hsl(var(--gold));border-radius:14px;' +
@@ -864,7 +869,7 @@ if('serviceWorker' in navigator){
   var bell = document.createElement('button');
   bell.id = 'wbnc-bell';
   bell.setAttribute('aria-label','Notifikasi pesanan online');
-  bell.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="wbnc-badge" hidden>0</span>';
+  bell.innerHTML = '<span class="wbnc-icon-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="wbnc-badge" hidden></span></span><span class="wbnc-label">Pesanan Online</span>';
   document.body.appendChild(bell);
 
   var toastWrap = document.createElement('div');
@@ -925,8 +930,8 @@ if('serviceWorker' in navigator){
   }
 
   function updateBadge(){
-    if(pending.length > 0){ badgeEl.hidden = false; badgeEl.textContent = pending.length > 99 ? '99+' : String(pending.length); }
-    else { badgeEl.hidden = true; }
+    badgeEl.hidden = pending.length === 0;
+    bell.setAttribute('aria-label', pending.length > 0 ? ('Notifikasi pesanan online, ' + pending.length + ' menunggu') : 'Notifikasi pesanan online');
   }
 
   function ringBell(){
