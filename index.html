@@ -970,6 +970,7 @@ if('serviceWorker' in navigator){
           '<div class="addr">\uD83D\uDCCD <span>' + (o.alamat || 'Alamat belum tersedia dari sistem') + '</span></div>' +
           '<div class="meta">' + itemsTxt + '</div>' +
           '<div class="meta">' + money(o.total) + '</div>' +
+          '<button data-done="' + o.id + '">Tandai Selesai</button>' +
           '</div>';
       }).join('');
     }
@@ -978,6 +979,12 @@ if('serviceWorker' in navigator){
       btn.addEventListener('click', function(){
         btn.disabled = true; btn.textContent = 'Memproses...';
         markProcessed(btn.getAttribute('data-mark'));
+      });
+    });
+    listEl.querySelectorAll('[data-done]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        btn.disabled = true; btn.textContent = 'Menyimpan...';
+        markDone(btn.getAttribute('data-done'));
       });
     });
   }
@@ -1092,6 +1099,26 @@ if('serviceWorker' in navigator){
       updateBadge(); renderList();
     }catch(e){
       console.warn('[wbnc] gagal tandai diproses:', e.message);
+      renderList(); // balikin tombol biar bisa dicoba lagi
+    }
+  }
+
+  // Nandain pesanan delivery yang lagi "Sedang Diantar" sebagai kelar/sampe.
+  // CATATAN: nilai status 'Selesai' ini nebak ikut pola yang udah ada
+  // (Menunggu Konfirmasi -> Diproses), soalnya OnlineOrders.gs (backend)
+  // gak ikut dikirim jadi gak kelihatan status apa aja yg diterima di sana.
+  // Kalau backend nolak/nama statusnya beda, sesuaikan string 'Selesai' di
+  // bawah ini biar cocok sama yg dipake pesananUpdateStatus_ di Code.gs.
+  async function markDone(id){
+    var c = client();
+    try{
+      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: 'Selesai' });
+      delivering = delivering.filter(function(o){ return o.id !== id; });
+      updateBadge(); renderList();
+      showSimpleToast('\u2705', 'Pesanan ditandai selesai.');
+    }catch(e){
+      console.warn('[wbnc] gagal tandai selesai:', e.message);
+      showSimpleToast('\u26A0\uFE0F', 'Gagal tandai selesai: ' + (e.message || 'error server'));
       renderList(); // balikin tombol biar bisa dicoba lagi
     }
   }
