@@ -588,9 +588,9 @@ function r9({ onNavigate, onNavigateMore }) {
         (0,k.jsx)(CalIc, { size: 15 }),
         (0,k.jsx)("span", { children: dateFull })
       ] }),
-      (0,k.jsxs)("button", { className: "relative flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-muted", children: [
+      (0,k.jsxs)("button", { id: "wbnc-home-bell", className: "relative flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-muted", children: [
         (0,k.jsx)(BellIc, { size: 16 }),
-        (0,k.jsx)("span", { className: "absolute rounded-full bg-rust", style: { width: 7, height: 7, top: 7, right: 7 } })
+        (0,k.jsx)("span", { id: "wbnc-home-dot", className: "absolute rounded-full bg-rust", style: { width: 7, height: 7, top: 7, right: 7 } })
       ] })
     ] }),
     (0,k.jsxs)("div", { className: "mt-4 rounded-2xl border border-line bg-surface p-4 shadow-sm", children: [
@@ -796,11 +796,20 @@ if('serviceWorker' in navigator){
   var APPSCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNCNtv1wZh09uX97ngEV_JgVc_JJW5t6PB7YjpCTrNAmxLv8gQir0GCvTUNO6-rrbCUw/exec";
   var POLL_INTERVAL_MS = 8000;
 
+  var BELL_ID = 'wbnc-home-bell'; // id tombol bell ASLI di header Beranda
+  var DOT_ID = 'wbnc-home-dot';   // id titik merah ASLI di tombol itu
+
   var sb = null; // dibikin pas dipakai, biar AppScriptClient udah pasti ke-load duluan
   function client(){
     if(!sb && window.AppScriptClient) sb = new window.AppScriptClient();
     return sb;
   }
+
+  // Komponen Beranda cuma dirender pas tab-nya lagi aktif (unmount pas pindah
+  // tab), jadi tombol bell & titiknya bisa muncul-hilang-muncul lagi. Makanya
+  // dicari ulang tiap dibutuhin, bukan disimpen sekali di variabel di awal.
+  function bellEl(){ return document.getElementById(BELL_ID); }
+  function dotEl(){ return document.getElementById(DOT_ID); }
 
   // Panggilan mentah buat action yang gak ke-cover query builder .from() --
   // format body sama persis kayak fungsi call() internal app ini.
@@ -821,21 +830,14 @@ if('serviceWorker' in navigator){
   /* ---------- styles (pakai css var tema app biar nyatu) ---------- */
   var style = document.createElement('style');
   style.textContent =
-    /* Sama persis kayak tombol bel notifikasi di Beranda (h-9 w-9 rounded-full
-       border border-line text-ink-muted + dot merah kecil), cuma dibuat pill
-       biar muat teks "Pesanan Online" di sampingnya. */
-    '#wbnc-bell{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);right:14px;z-index:9998;' +
-      'display:flex;align-items:center;gap:7px;height:36px;padding:0 14px 0 11px;border-radius:9999px;' +
-      'border:1px solid hsl(var(--line));background:hsl(var(--surface));box-shadow:0 6px 18px rgba(0,0,0,.25);' +
-      'font-family:"Public Sans",system-ui,sans-serif;font-size:12px;font-weight:500;' +
-      'color:hsl(var(--ink-muted));cursor:pointer;transition:transform .15s ease}' +
-    '#wbnc-bell:active{transform:scale(.96)}' +
-    '.wbnc-icon-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center}' +
-    '#wbnc-bell.wbnc-ring .wbnc-icon-wrap{animation:wbnc-ring .6s ease}' +
+    /* Bell-nya udah ada beneran di header Beranda (id="wbnc-home-bell", titik
+       merah id="wbnc-home-dot") -- di sini cuma nambahin animasi "ring" pas
+       ada pesanan baru, dan bikin titik merahnya default kesembunyi sampe
+       kepastian ada pesanan yang nunggu (biar gak nyala palsu pas awal load). */
+    '#' + DOT_ID + '{display:none}' +
+    '#' + BELL_ID + '.wbnc-ring{animation:wbnc-ring .6s ease}' +
     '@keyframes wbnc-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-18deg)}40%{transform:rotate(14deg)}60%{transform:rotate(-10deg)}80%{transform:rotate(6deg)}}' +
-    '.wbnc-label{white-space:nowrap}' +
-    '#wbnc-badge{position:absolute;top:-1px;right:-1px;width:7px;height:7px;border-radius:9999px;background:hsl(var(--rust))}' +
-    '#wbnc-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:14px;right:70px;z-index:9999;' +
+    '#wbnc-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:14px;right:14px;z-index:9999;' +
       'display:flex;flex-direction:column;gap:8px;pointer-events:none}' +
     '.wbnc-toast{pointer-events:auto;background:hsl(var(--surface-2));border:1px solid hsl(var(--gold));border-radius:14px;' +
       'padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.45);display:flex;gap:10px;align-items:flex-start;' +
@@ -865,13 +867,7 @@ if('serviceWorker' in navigator){
     '#wbnc-login-hint{color:hsl(var(--ink-faint));text-align:center;padding:28px 10px;font-size:12.5px}';
   document.head.appendChild(style);
 
-  /* ---------- elemen ---------- */
-  var bell = document.createElement('button');
-  bell.id = 'wbnc-bell';
-  bell.setAttribute('aria-label','Notifikasi pesanan online');
-  bell.innerHTML = '<span class="wbnc-icon-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="wbnc-badge" hidden></span></span><span class="wbnc-label">Pesanan Online</span>';
-  document.body.appendChild(bell);
-
+  /* ---------- elemen (toast + panel; bell-nya udah ada, tinggal dipasangin) ---------- */
   var toastWrap = document.createElement('div');
   toastWrap.id = 'wbnc-toast-wrap';
   document.body.appendChild(toastWrap);
@@ -888,11 +884,14 @@ if('serviceWorker' in navigator){
   document.body.appendChild(panel);
 
   var listEl = panel.querySelector('#wbnc-panel-list');
-  var badgeEl = document.getElementById('wbnc-badge');
 
   function openPanel(){ overlay.classList.add('open'); panel.classList.add('open'); renderList(); }
   function closePanel(){ overlay.classList.remove('open'); panel.classList.remove('open'); }
-  bell.addEventListener('click', openPanel);
+  // Delegation ke document (bukan bell.addEventListener langsung) biar tetep
+  // nyala walau tombol bell aslinya sempet ke-remount pas pindah-pindah tab.
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('#' + BELL_ID)) openPanel();
+  });
   overlay.addEventListener('click', closePanel);
   panel.querySelector('#wbnc-panel-close').addEventListener('click', closePanel);
 
@@ -930,11 +929,15 @@ if('serviceWorker' in navigator){
   }
 
   function updateBadge(){
-    badgeEl.hidden = pending.length === 0;
-    bell.setAttribute('aria-label', pending.length > 0 ? ('Notifikasi pesanan online, ' + pending.length + ' menunggu') : 'Notifikasi pesanan online');
+    var dot = dotEl();
+    if(dot) dot.style.display = pending.length > 0 ? '' : 'none';
+    var bell = bellEl();
+    if(bell) bell.setAttribute('aria-label', pending.length > 0 ? ('Notifikasi pesanan online, ' + pending.length + ' menunggu') : 'Notifikasi pesanan online');
   }
 
   function ringBell(){
+    var bell = bellEl();
+    if(!bell) return;
     bell.classList.remove('wbnc-ring'); void bell.offsetWidth; bell.classList.add('wbnc-ring');
   }
 
