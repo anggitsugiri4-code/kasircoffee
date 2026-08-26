@@ -1201,3 +1201,271 @@ if('serviceWorker' in navigator){
   setInterval(poll, POLL_INTERVAL_MS);
 })();
 </script>
+<script>
+/* =====================================================================
+   PATCH TAMBAHAN — Panel "Foto Kategori"
+   =====================================================================
+   Script ini DITAMBAHKAN di luar bundle React utama (gak nyentuh kode
+   ter-minify di atas sama sekali). Dia numpang pakai:
+   - window.AppScriptClient (class query-builder yang udah didefinisikan
+     di script sebelumnya, dipakai app utama buat sb.from(...))
+   - sesi login yang sama (AppScriptClient otomatis baca localStorage pas
+     di-instansiasi, jadi begitu pemilik toko login di app utama, panel
+     ini otomatis ikut punya akses)
+   Fungsinya: pemilik toko upload 1 foto per kategori (disimpan sebagai
+   base64 di tabel "categories"), lalu otomatis muncul di app order
+   online (Anterin) sebagai gambar kecil di chip kategori.
+   ===================================================================== */
+(function () {
+  'use strict';
+  var APPSCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNCNtv1wZh09uX97ngEV_JgVc_JJW5t6PB7YjpCTrNAmxLv8gQir0GCvTUNO6-rrbCUw/exec";
+
+  function waitFor(check, cb, tries) {
+    tries = tries || 0;
+    if (check()) return cb();
+    if (tries > 150) return; // ~30 detik, nyerah kalau AppScriptClient gak pernah muncul
+    setTimeout(function () { waitFor(check, cb, tries + 1); }, 200);
+  }
+
+  waitFor(function () { return !!window.AppScriptClient; }, init);
+
+  function init() {
+    var client = new window.AppScriptClient(APPSCRIPT_URL);
+
+    // ---------- kompres foto sebelum disimpan (base64 di database) ----------
+    function compressImage(file, maxSize, quality) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error('Gagal baca file')); };
+        reader.onload = function () {
+          var img = new Image();
+          img.onerror = function () { reject(new Error('File bukan gambar valid')); };
+          img.onload = function () {
+            var w = img.width, h = img.height;
+            if (w > h) { if (w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; } }
+            else { if (h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; } }
+            var canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality || 0.75));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // ---------- styles ----------
+    var style = document.createElement('style');
+    style.textContent =
+      '#catphoto-fab{position:fixed;z-index:9998;' +
+      'width:32px;height:32px;border-radius:9999px;border:none;cursor:pointer;' +
+      'background:hsl(38,100%,62%);color:#1a1206;font-size:14px;' +
+      'box-shadow:0 4px 12px rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;' +
+      'transition:left .08s linear,top .08s linear;}' +
+      '#catphoto-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;' +
+      'display:flex;align-items:flex-end;justify-content:center;}' +
+      '#catphoto-overlay.hidden{display:none;}' +
+      '#catphoto-sheet{background:#17121d;color:#f2ede2;width:100%;max-width:480px;' +
+      'max-height:82vh;overflow-y:auto;border-radius:20px 20px 0 0;padding:16px;' +
+      'font-family:"Public Sans",system-ui,sans-serif;position:relative;}' +
+      '#catphoto-sheet h3{margin:0 0 12px;font-size:16px;font-weight:700;}' +
+      '.catphoto-row{display:flex;align-items:center;gap:12px;padding:10px 0;' +
+      'border-bottom:1px solid rgba(255,255,255,.08);}' +
+      '.catphoto-thumb{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.06);' +
+      'display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;font-size:22px;}' +
+      '.catphoto-thumb img{width:100%;height:100%;object-fit:cover;}' +
+      '.catphoto-name{flex:1;font-size:14px;font-weight:600;}' +
+      '.catphoto-btn{font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);' +
+      'background:transparent;color:#f2ede2;cursor:pointer;}' +
+      '#catphoto-save{margin-top:14px;width:100%;padding:12px;border-radius:12px;border:none;' +
+      'background:hsl(38,100%,62%);color:#1a1206;font-weight:700;font-size:14px;cursor:pointer;}' +
+      '#catphoto-close{position:absolute;top:14px;right:16px;background:none;border:none;' +
+      'color:#f2ede2;font-size:20px;cursor:pointer;}' +
+      '#catphoto-status{font-size:12px;color:#c9c2b3;margin-top:8px;min-height:16px;}';
+    document.head.appendChild(style);
+
+    // ---------- fab + sheet ----------
+    var fab = document.createElement('button');
+    fab.id = 'catphoto-fab';
+    fab.title = 'Foto Kategori';
+    fab.type = 'button';
+    fab.textContent = '\uD83D\uDDBC\uFE0F';
+    document.body.appendChild(fab);
+
+    // ---------- posisikan fab nempel di field "Kategori" form Tambah/Edit Produk ----------
+    // (bukan nempel form Kategori Pengeluaran, yang teksnya sama tapi beda dialog)
+    function findProductKategoriLabel() {
+      var dialogs = document.querySelectorAll('[role="dialog"]');
+      for (var i = 0; i < dialogs.length; i++) {
+        var d = dialogs[i];
+        var t = d.textContent || '';
+        if (t.indexOf('Nama Produk') === -1) continue; // pastikan ini dialog Tambah/Edit Produk
+        if (t.indexOf('Tambah Produk') === -1 && t.indexOf('Edit Produk') === -1) continue;
+        var nodes = d.querySelectorAll('label,span,div,p');
+        for (var j = 0; j < nodes.length; j++) {
+          if (nodes[j].children.length === 0 && nodes[j].textContent.trim() === 'Kategori') return nodes[j];
+        }
+      }
+      return null;
+    }
+    function syncFabPosition() {
+      var label = findProductKategoriLabel();
+      if (label) {
+        var r = label.getBoundingClientRect();
+        fab.style.display = 'flex';
+        fab.style.left = Math.round(r.right + 8) + 'px';
+        fab.style.top = Math.round(r.top - 6) + 'px';
+      } else {
+        fab.style.display = 'none';
+      }
+    }
+    setInterval(syncFabPosition, 200);
+    window.addEventListener('scroll', syncFabPosition, true);
+    window.addEventListener('resize', syncFabPosition);
+
+    var overlay = document.createElement('div');
+    overlay.id = 'catphoto-overlay';
+    overlay.className = 'hidden';
+    overlay.innerHTML =
+      '<div id="catphoto-sheet">' +
+        '<button id="catphoto-close" type="button">\u2715</button>' +
+        '<h3>Foto Kategori</h3>' +
+        '<div id="catphoto-list"></div>' +
+        '<button id="catphoto-save" type="button">Simpan Semua</button>' +
+        '<div id="catphoto-status"></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    document.getElementById('catphoto-close').addEventListener('click', close);
+    fab.addEventListener('click', open);
+    document.getElementById('catphoto-save').addEventListener('click', saveAll);
+
+    var pending = {};       // { namaKategori: dataUrlBaru } perubahan belum tersimpan
+    var existingCats = [];  // baris tabel categories saat ini { id, name, photo_base64 }
+
+    function open() {
+      overlay.classList.remove('hidden');
+      loadAndRender();
+    }
+    function close() {
+      overlay.classList.add('hidden');
+      pending = {};
+    }
+    function setStatus(msg) {
+      document.getElementById('catphoto-status').textContent = msg || '';
+    }
+
+    function loadAndRender() {
+      var list = document.getElementById('catphoto-list');
+      list.innerHTML = '<div style="padding:20px 0;text-align:center;color:#c9c2b3;font-size:13px;">Memuat...</div>';
+      setStatus('');
+      Promise.all([
+        client.from('products').select(),
+        client.from('categories').select()
+      ]).then(function (results) {
+        var prodRes = results[0], catRes = results[1];
+        if (prodRes.error) throw new Error(prodRes.error.message || 'Gagal ambil produk');
+        if (catRes.error) throw new Error(catRes.error.message || 'Gagal ambil kategori');
+
+        var products = prodRes.data || [];
+        existingCats = catRes.data || [];
+
+        var names = {};
+        products.forEach(function (p) { if (p.category) names[p.category] = true; });
+        existingCats.forEach(function (c) { if (c.name) names[c.name] = true; });
+        var nameList = Object.keys(names).sort();
+
+        if (!nameList.length) {
+          list.innerHTML = '<div style="padding:20px 0;text-align:center;color:#c9c2b3;font-size:13px;">Belum ada kategori. Tambah produk dulu.</div>';
+          return;
+        }
+
+        list.innerHTML = '';
+        nameList.forEach(function (name) { list.appendChild(buildRow(name)); });
+      }).catch(function (err) {
+        list.innerHTML = '<div style="padding:20px 0;text-align:center;color:#ff8a80;font-size:13px;">Gagal memuat: ' + (err.message || err) + '</div>';
+      });
+    }
+
+    function buildRow(name) {
+      var existing = existingCats.filter(function (c) { return c.name === name; })[0];
+      var row = document.createElement('div');
+      row.className = 'catphoto-row';
+
+      var thumb = document.createElement('div');
+      thumb.className = 'catphoto-thumb';
+      if (existing && existing.photo_base64) {
+        var img = document.createElement('img');
+        img.src = existing.photo_base64;
+        thumb.appendChild(img);
+      } else {
+        thumb.textContent = '\uD83C\uDFF7\uFE0F';
+      }
+
+      var label = document.createElement('div');
+      label.className = 'catphoto-name';
+      label.textContent = name;
+
+      var btn = document.createElement('button');
+      btn.className = 'catphoto-btn';
+      btn.type = 'button';
+      btn.textContent = 'Upload';
+
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.style.display = 'none';
+
+      btn.addEventListener('click', function () { fileInput.click(); });
+      fileInput.addEventListener('change', function () {
+        var file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        setStatus('Memproses foto "' + name + '"...');
+        compressImage(file, 240, 0.75).then(function (dataUrl) {
+          pending[name] = dataUrl;
+          thumb.innerHTML = '';
+          var previewImg = document.createElement('img');
+          previewImg.src = dataUrl;
+          thumb.appendChild(previewImg);
+          setStatus('Foto "' + name + '" siap disimpan. Klik "Simpan Semua".');
+        }).catch(function (err) {
+          setStatus('Gagal proses foto: ' + err.message);
+        });
+      });
+
+      row.appendChild(thumb);
+      row.appendChild(label);
+      row.appendChild(btn);
+      row.appendChild(fileInput);
+      return row;
+    }
+
+    function saveAll() {
+      var names = Object.keys(pending);
+      if (!names.length) { setStatus('Gak ada perubahan buat disimpan.'); return; }
+      setStatus('Menyimpan...');
+      var okCount = 0, failCount = 0;
+      var chain = Promise.resolve();
+      names.forEach(function (name) {
+        chain = chain.then(function () {
+          var dataUrl = pending[name];
+          var existing = existingCats.filter(function (c) { return c.name === name; })[0];
+          var op = existing
+            ? client.from('categories').update({ photo_base64: dataUrl }).eq('id', existing.id)
+            : client.from('categories').insert({ name: name, photo_base64: dataUrl });
+          return op.then(function (res) {
+            if (res.error) failCount++; else okCount++;
+          }).catch(function () { failCount++; });
+        });
+      });
+      chain.then(function () {
+        pending = {};
+        setStatus(okCount + ' foto tersimpan' + (failCount ? (', ' + failCount + ' gagal') : '') + '.');
+        loadAndRender();
+      });
+    }
+  }
+})();
+</script>
