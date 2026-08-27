@@ -1258,11 +1258,10 @@ if('serviceWorker' in navigator){
     // ---------- styles ----------
     var style = document.createElement('style');
     style.textContent =
-      '#catphoto-fab{position:fixed;z-index:9998;' +
-      'width:32px;height:32px;border-radius:9999px;border:none;cursor:pointer;' +
-      'background:hsl(38,100%,62%);color:#1a1206;font-size:14px;' +
-      'box-shadow:0 4px 12px rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;' +
-      'transition:left .08s linear,top .08s linear;}' +
+      '#catphoto-fab{position:static;display:none;align-items:center;justify-content:center;' +
+      'width:22px;height:22px;flex:0 0 auto;border-radius:9999px;border:none;cursor:pointer;' +
+      'background:hsl(38,100%,62%);color:#1a1206;font-size:12px;line-height:1;' +
+      'box-shadow:0 1px 4px rgba(0,0,0,.35);}' +
       '#catphoto-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;' +
       'display:flex;align-items:flex-end;justify-content:center;}' +
       '#catphoto-overlay.hidden{display:none;}' +
@@ -1291,9 +1290,13 @@ if('serviceWorker' in navigator){
     fab.title = 'Foto Kategori';
     fab.type = 'button';
     fab.textContent = '\uD83D\uDDBC\uFE0F';
-    document.body.appendChild(fab);
+    // CATATAN: fab TIDAK di-append ke document.body. Dia ditempel langsung jadi
+    // anak dari label "Kategori" di dalam dialog, supaya (1) posisinya beneran
+    // nempel & ikut alur/scroll form (gak ngambang lagi), dan (2) fab masuk ke
+    // DOM dialog jadi gak ke-block sama outside-click guard punya Radix Dialog
+    // (yang bikin dia gak bisa diklik pas posisinya cuma "position:fixed" lepas).
 
-    // ---------- posisikan fab nempel di field "Kategori" form Tambah/Edit Produk ----------
+    // ---------- cari & tempelin fab di field "Kategori" form Tambah/Edit Produk ----------
     // (bukan nempel form Kategori Pengeluaran, yang teksnya sama tapi beda dialog)
     function findProductKategoriLabel() {
       var dialogs = document.querySelectorAll('[role="dialog"]');
@@ -1309,20 +1312,20 @@ if('serviceWorker' in navigator){
       }
       return null;
     }
-    function syncFabPosition() {
+    function syncFabAttach() {
       var label = findProductKategoriLabel();
-      if (label) {
-        var r = label.getBoundingClientRect();
-        fab.style.display = 'flex';
-        fab.style.left = Math.round(r.right + 8) + 'px';
-        fab.style.top = Math.round(r.top - 6) + 'px';
-      } else {
-        fab.style.display = 'none';
+      if (!label) {
+        if (fab.parentNode) fab.parentNode.removeChild(fab);
+        return;
       }
+      if (fab.parentNode === label) return; // udah nempel bener, gak usah diapa-apain lagi
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '6px';
+      label.appendChild(fab);
+      fab.style.display = 'flex';
     }
-    setInterval(syncFabPosition, 200);
-    window.addEventListener('scroll', syncFabPosition, true);
-    window.addEventListener('resize', syncFabPosition);
+    setInterval(syncFabAttach, 200);
 
     var overlay = document.createElement('div');
     overlay.id = 'catphoto-overlay';
