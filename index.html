@@ -846,6 +846,13 @@ if('serviceWorker' in navigator){
   var BELL_ID = 'wbnc-home-bell'; // id tombol bell ASLI di header Beranda
   var DOT_ID = 'wbnc-home-dot';   // id titik merah ASLI di tombol itu
 
+  // Pengaturan Notifikasi: on/off suara beep pesanan online masuk.
+  // Badge & toast tetep selalu muncul (biar ga ada pesanan kelewat), yang
+  // bisa dimatiin cuma suaranya. Disimpen di localStorage per device/browser.
+  var NOTIF_SOUND_KEY = 'wbnc_notif_sound_on';
+  function notifSoundOn(){ try{ return localStorage.getItem(NOTIF_SOUND_KEY) !== 'off'; }catch(e){ return true; } }
+  function setNotifSound(on){ try{ localStorage.setItem(NOTIF_SOUND_KEY, on ? 'on' : 'off'); }catch(e){} }
+
   var sb = null; // dibikin pas dipakai, biar AppScriptClient udah pasti ke-load duluan
   function client(){
     if(!window.AppScriptClient) return null;
@@ -910,6 +917,8 @@ if('serviceWorker' in navigator){
     '#wbnc-panel-head{padding:16px 18px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid hsl(var(--line-soft))}' +
     '#wbnc-panel-head h2{font-family:Fraunces,serif;font-size:18px;margin:0;color:hsl(var(--ink))}' +
     '#wbnc-panel-close{color:hsl(var(--ink-muted));background:none;border:0;font-size:20px;cursor:pointer;padding:4px 8px;line-height:1}' +
+    '#wbnc-panel-actions{display:flex;align-items:center;gap:2px}' +
+    '#wbnc-notif-sound-toggle{color:hsl(var(--ink-muted));background:none;border:0;font-size:16px;cursor:pointer;padding:4px 8px;line-height:1}' +
     '#wbnc-panel-list{overflow-y:auto;padding:10px 14px 14px;display:flex;flex-direction:column;gap:10px}' +
     '.wbnc-order-card{background:hsl(var(--surface-2));border:1px solid hsl(var(--line-soft));border-radius:14px;padding:12px 14px}' +
     '.wbnc-order-card .row{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
@@ -942,7 +951,7 @@ if('serviceWorker' in navigator){
   var panel = document.createElement('div');
   panel.id = 'wbnc-panel';
   panel.innerHTML =
-    '<div id="wbnc-panel-head"><h2>Pesanan Online Masuk</h2><button id="wbnc-panel-close">\u2715</button></div>' +
+    '<div id="wbnc-panel-head"><h2>Pesanan Online Masuk</h2><div id="wbnc-panel-actions"><button id="wbnc-notif-sound-toggle" title="Suara notifikasi"></button><button id="wbnc-panel-close">\u2715</button></div></div>' +
     '<div id="wbnc-panel-list"></div>';
   document.body.appendChild(panel);
 
@@ -950,6 +959,14 @@ if('serviceWorker' in navigator){
 
   function openPanel(){ overlay.classList.add('open'); panel.classList.add('open'); renderList(); }
   function closePanel(){ overlay.classList.remove('open'); panel.classList.remove('open'); }
+
+  var soundBtn = panel.querySelector('#wbnc-notif-sound-toggle');
+  function renderSoundBtn(){
+    soundBtn.textContent = notifSoundOn() ? '\uD83D\uDD0A' : '\uD83D\uDD07';
+    soundBtn.setAttribute('aria-label', notifSoundOn() ? 'Suara notifikasi nyala, tap untuk matikan' : 'Suara notifikasi mati, tap untuk nyalakan');
+  }
+  renderSoundBtn();
+  soundBtn.addEventListener('click', function(e){ e.stopPropagation(); setNotifSound(!notifSoundOn()); renderSoundBtn(); });
   // Delegation ke document (bukan bell.addEventListener langsung) biar tetep
   // nyala walau tombol bell aslinya sempet ke-remount pas pindah-pindah tab.
   document.addEventListener('click', function(e){
@@ -1095,6 +1112,22 @@ if('serviceWorker' in navigator){
     }catch(e){}
   }
 
+  // Suara ngomong (bukan cuma nada beep) pas ada pesanan online baru masuk,
+  // pake Web Speech API bawaan browser (gratis, offline, gasah nunggu file
+  // audio kedownload). Kalau browser gak dukung (jarang), diem aja -- beep()
+  // di atas tetep jalan duluan sbg fallback suara.
+  function speakNotif(order){
+    try{
+      if(!window.speechSynthesis) return;
+      var nama = order && order.nama ? order.nama : 'pelanggan';
+      var u = new SpeechSynthesisUtterance('Hey, ada pesanan online nih! Dari ' + nama + '.');
+      u.lang = 'id-ID';
+      u.rate = 1;
+      window.speechSynthesis.cancel(); // buang antrian lama biar gak numpuk kalo pesanan masuk beruntun
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
   function showToast(order){
     var t = document.createElement('div');
     t.className = 'wbnc-toast';
@@ -1230,7 +1263,7 @@ if('serviceWorker' in navigator){
         };
         var existingIdx = pending.findIndex(function(o){ return o.id === row.id; });
         if(existingIdx === -1) pending.unshift(order); else pending[existingIdx] = order;
-        if(isNew){ ringBell(); beep(); showToast(order); }
+        if(isNew){ ringBell(); if(notifSoundOn()){ beep(); speakNotif(order); } showToast(order); }
       });
       // Buang dari daftar kalau statusnya udah berubah di tempat lain
       // (mis. diproses lewat halaman lain / perangkat lain).
