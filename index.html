@@ -797,28 +797,48 @@ if('serviceWorker' in navigator){
    Kalau kasir belum login pas overlay ini jalan, polling di-skip diam2
    & dicoba lagi tiap putaran -- begitu kasir login, langsung kepakai.
 
-   TAMBAHAN: Pesanan delivery -> "Sedang Diantar" + cetak struk otomatis
+   REVISI: alur pesanan online sekarang 4 tahap, bukan 2
    ---------------------------------------------------------------------
-   - Pas "Tandai Diproses" dipencet buat pesanan delivery_type==='delivery',
-     status transaksi disimpen sbg 'Dikirim' (BUKAN 'Diproses' -- backend
-     punya 4 status Menunggu Konfirmasi -> Diproses -> Dikirim -> Selesai,
-     jadi klik ini mewakili "dapur kelar + kurir jalan" sekaligus). Order
-     itu dipindah ke daftar "Sedang Diantar" (nampilin alamat kirim + isi
-     pesanan) DAN langsung nyoba cetak struk otomatis lewat printer
-     Bluetooth yang udah kesambung (pakai window.btPrintReceipt, di-expose
-     dari <script type="module"> pertama -- lihat baris deket btPrintReceipt
-     asli). Pesanan pickup tetep pakai status 'Diproses' seperti biasa,
-     gak diikutin ke daftar ini, sesuai perilaku lama.
-   - Daftar "Sedang Diantar" disinkronin ulang tiap poll dari data asli
-     (status='Dikirim' & delivery_type='delivery') biar tetep akurat
-     walau halaman di-reload -- tapi cetak struk CUMA dipicu sekali pas
-     transisi awal (klik tombol), bukan tiap poll, biar gak boros kertas.
+   Sebelumnya overlay ini cuma mindahin status "Menunggu Konfirmasi" ->
+   "Diproses" -> langsung "Selesai", dan cuma pesanan delivery yang
+   kelihatan dapet tahap "sedang diantar" (pesanan pickup ilang gitu aja
+   abis ditandai Diproses, gak ada tombol buat nyelesein nya). Status
+   "Dikirim" yang sebenernya udah ada di backend gak kepake sama sekali.
+   Sekarang alurnya disamain buat SEMUA pesanan online (delivery MAUPUN
+   pickup), pas sama 4 status yang dipake backend:
+     Menunggu Konfirmasi -> Diproses -> Dikirim -> Selesai
+   - "Menunggu Konfirmasi" (pending): pesanan baru masuk, belum disentuh.
+     Tombol "Tandai Diproses" -> update status jadi "Diproses".
+   - "Diproses" (processing): dapur/toko lagi nyiapin pesanan. Buat
+     pesanan delivery_type==='delivery', begitu masuk tahap ini langsung
+     nyoba cetak struk otomatis lewat printer Bluetooth yang udah
+     kesambung (pakai window.btPrintReceipt, di-expose dari <script
+     type="module"> pertama -- lihat baris deket btPrintReceipt asli),
+     soalnya strukini kepake kurir buat nganter. Tombolnya "Tandai
+     Dikirim" (delivery) / "Tandai Siap Diambil" (pickup) -- dua-duanya
+     manggil status yang sama, "Dikirim", cuma beda label sesuai
+     delivery_type biar masuk akal buat pelanggan yang ambil sendiri.
+   - "Dikirim" (shipping): buat delivery ditampilin sebagai "Sedang
+     Diantar" (lengkap sama alamat kirim), buat pickup ditampilin
+     sebagai "Siap Diambil" (gak nampilin alamat, gak relevan). Tombol
+     "Tandai Selesai" -> update status jadi "Selesai" & ilang dari
+     overlay (transaksi lama tetep kebaca lewat Riwayat Transaksi biasa).
+   - "Selesai": final, gak dilacak lagi di sini.
+   Ketiga daftar (pending/processing/shipping) disinkronin ulang tiap
+   putaran poll dari data asli biar tetep akurat lintas perangkat/reload
+   -- tapi cetak struk otomatis CUMA dipicu sekali pas transisi awal ke
+   "Diproses" (klik tombol), bukan tiap poll, biar gak boros kertas.
    - ASUMSI nama kolom alamat: baris transaksi belum kelihatan punya field
      alamat eksplisit di kode yang ada (OnlineOrders.gs gak ikut dikirim),
      jadi dicoba beberapa nama kolom umum (delivery_address, address,
      customer_address, shipping_address, alamat). Kalau alamat tetep gak
      muncul di kartu "Sedang Diantar", cek nama kolom asli di backend terus
      sesuaikan daftar di fungsi pickAddress() di bawah.
+   - ASUMSI nama status "Dikirim" & "Selesai": disamain persis kayak yang
+     kelihatan/keimplikasi dari backend (Menunggu Konfirmasi -> Diproses
+     -> Dikirim udah kekonfirmasi ada; "Selesai" masih nebak ikut pola
+     penamaan yang sama). Kalau pesananUpdateStatus_ di Code.gs nolak
+     salah satu string ini, sesuaikan konstanta status di bawah biar cocok.
    ===================================================================== */
 (function(){
   var APPSCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHbBoVxEO3AnvWdyJGYOrv1A7STNYysQBZrmZ5EQwnsLZb3qxQRLWKcJF-6Prx7EB-Vg/exec";
@@ -859,8 +879,9 @@ if('serviceWorker' in navigator){
   }
 
   var knownIds = new Set();
-  var pending = []; // {id, nama, items, total, metode, waktu, alamat, code, deliveryType}
-  var delivering = []; // pesanan delivery yang udah "Diproses" -- sedang diantar
+  var pending = []; // status "Menunggu Konfirmasi" -- {id, nama, items, total, metode, waktu, alamat, code, deliveryType}
+  var processing = []; // status "Diproses" -- lagi disiapin, delivery MAUPUN pickup
+  var shipping = []; // status "Dikirim" -- "Sedang Diantar" (delivery) / "Siap Diambil" (pickup)
   var printedIds = new Set(); // cegah cetak struk dobel buat order yang sama
 
   /* ---------- styles (pakai css var tema app biar nyatu) ---------- */
@@ -903,7 +924,8 @@ if('serviceWorker' in navigator){
     '#wbnc-login-hint{color:hsl(var(--ink-faint));text-align:center;padding:28px 10px;font-size:12.5px}' +
     '.wbnc-section-label{margin:6px 2px 2px;font-size:11px;font-weight:700;text-transform:uppercase;' +
       'letter-spacing:.04em;color:hsl(var(--ink-faint))}' +
-    '.wbnc-order-card.delivering{border-color:hsl(var(--sage))}' +
+    '.wbnc-order-card.processing{border-color:hsl(var(--gold))}' +
+    '.wbnc-order-card.shipping{border-color:hsl(var(--sage))}' +
     '.wbnc-order-card .addr{color:hsl(var(--ink));font-size:12.5px;margin-top:6px;display:flex;gap:5px;align-items:flex-start}' +
     '.wbnc-order-card .status-pill{background:hsl(var(--sage)/.15);color:hsl(var(--sage));border-radius:999px;' +
       'padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;white-space:nowrap}';
@@ -948,40 +970,58 @@ if('serviceWorker' in navigator){
     return row.address || row.Alamat || row.delivery_address || 'Alamat belum tersedia dari sistem';
   }
 
+  function orderCard(o, opts){
+    var itemsTxt = (o.items || []).map(function(it){ return it.qty + 'x ' + it.name; }).join(', ');
+    var cls = 'wbnc-order-card' + (opts.cardClass ? ' ' + opts.cardClass : '');
+    var head = opts.statusPill
+      ? '<div class="row"><span class="name">' + (o.nama || 'Pelanggan') + '</span><span class="status-pill">' + opts.statusPill + '</span></div>'
+      : '<div class="row"><span class="name">' + (o.nama || 'Pelanggan') + '</span><span class="total">' + money(o.total) + '</span></div>';
+    var addrRow = opts.showAddress
+      ? '<div class="addr">\uD83D\uDCCD <span>' + (o.alamat || 'Alamat belum tersedia dari sistem') + '</span></div>'
+      : '';
+    var totalRow = opts.statusPill
+      ? '<div class="meta">' + itemsTxt + '</div><div class="meta">' + money(o.total) + '</div>'
+      : '<div class="meta">' + (o.metode || '') + ' \u2022 ' + (o.waktu || '') + '</div><div class="meta">' + itemsTxt + '</div>';
+    return '<div class="' + cls + '" data-id="' + o.id + '">' + head + addrRow + totalRow +
+      '<button data-' + opts.action + '="' + o.id + '">' + opts.btnLabel + '</button></div>';
+  }
+
   function renderList(){
     var c = client();
     if(c && !c._token()){
       listEl.innerHTML = '<div id="wbnc-login-hint">Login dulu buat lihat pesanan online masuk \uD83D\uDD11</div>';
       return;
     }
-    if(pending.length === 0 && delivering.length === 0){
+    if(pending.length === 0 && processing.length === 0 && shipping.length === 0){
       listEl.innerHTML = '<div id="wbnc-empty">Belum ada pesanan online baru \uD83D\uDC4B</div>';
       return;
     }
+    var shippingDelivery = shipping.filter(function(o){ return o.deliveryType === 'delivery'; });
+    var shippingPickup = shipping.filter(function(o){ return o.deliveryType !== 'delivery'; });
     var html = '';
     if(pending.length > 0){
       html += '<p class="wbnc-section-label">Pesanan Baru</p>';
       html += pending.map(function(o){
-        var itemsTxt = (o.items || []).map(function(it){ return it.qty + 'x ' + it.name; }).join(', ');
-        return '<div class="wbnc-order-card" data-id="' + o.id + '">' +
-          '<div class="row"><span class="name">' + (o.nama || 'Pelanggan') + '</span><span class="total">' + money(o.total) + '</span></div>' +
-          '<div class="meta">' + (o.metode || '') + ' \u2022 ' + (o.waktu || '') + '</div>' +
-          '<div class="meta">' + itemsTxt + '</div>' +
-          '<button data-mark="' + o.id + '">Tandai Diproses</button>' +
-          '</div>';
+        return orderCard(o, { action: 'mark', btnLabel: 'Tandai Diproses' });
       }).join('');
     }
-    if(delivering.length > 0){
+    if(processing.length > 0){
+      html += '<p class="wbnc-section-label">Sedang Diproses</p>';
+      html += processing.map(function(o){
+        var lbl = o.deliveryType === 'delivery' ? 'Tandai Dikirim' : 'Tandai Siap Diambil';
+        return orderCard(o, { cardClass: 'processing', action: 'ship', btnLabel: lbl });
+      }).join('');
+    }
+    if(shippingDelivery.length > 0){
       html += '<p class="wbnc-section-label">Sedang Diantar</p>';
-      html += delivering.map(function(o){
-        var itemsTxt = (o.items || []).map(function(it){ return it.qty + 'x ' + it.name; }).join(', ');
-        return '<div class="wbnc-order-card delivering" data-id="' + o.id + '">' +
-          '<div class="row"><span class="name">' + (o.nama || 'Pelanggan') + '</span><span class="status-pill">Diantar</span></div>' +
-          '<div class="addr">\uD83D\uDCCD <span>' + (o.alamat || 'Alamat belum tersedia dari sistem') + '</span></div>' +
-          '<div class="meta">' + itemsTxt + '</div>' +
-          '<div class="meta">' + money(o.total) + '</div>' +
-          '<button data-done="' + o.id + '">Tandai Selesai</button>' +
-          '</div>';
+      html += shippingDelivery.map(function(o){
+        return orderCard(o, { cardClass: 'shipping', action: 'done', btnLabel: 'Tandai Selesai', statusPill: 'Diantar', showAddress: true });
+      }).join('');
+    }
+    if(shippingPickup.length > 0){
+      html += '<p class="wbnc-section-label">Siap Diambil</p>';
+      html += shippingPickup.map(function(o){
+        return orderCard(o, { cardClass: 'shipping', action: 'done', btnLabel: 'Tandai Selesai', statusPill: 'Siap Diambil' });
       }).join('');
     }
     listEl.innerHTML = html;
@@ -989,6 +1029,12 @@ if('serviceWorker' in navigator){
       btn.addEventListener('click', function(){
         btn.disabled = true; btn.textContent = 'Memproses...';
         markProcessed(btn.getAttribute('data-mark'));
+      });
+    });
+    listEl.querySelectorAll('[data-ship]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        btn.disabled = true; btn.textContent = 'Menyimpan...';
+        markShipping(btn.getAttribute('data-ship'));
       });
     });
     listEl.querySelectorAll('[data-done]').forEach(function(btn){
@@ -1071,7 +1117,8 @@ if('serviceWorker' in navigator){
 
   // Cetak struk otomatis lewat printer Bluetooth yang udah kesambung di
   // Pengaturan Printer Bluetooth (pakai koneksi yang sama, bukan bikin baru).
-  // Cuma dipanggil sekali pas transisi pesanan -> "Sedang Diantar".
+  // Cuma dipanggil sekali pas pesanan delivery ditandai "Diproses" (transisi
+  // pertama dari "Menunggu Konfirmasi"), soalnya struk itu yang kepake kurir.
   async function autoPrintReceipt(order){
     if(printedIds.has(order.id)) return;
     printedIds.add(order.id);
@@ -1100,26 +1147,17 @@ if('serviceWorker' in navigator){
     }
   }
 
-  // FIX: backend punya 4 status (Menunggu Konfirmasi -> Diproses -> Dikirim ->
-  // Selesai), tapi sebelumnya kode ini cuma pernah nulis 'Diproses' lalu lompat
-  // langsung ke 'Selesai' -- status 'Dikirim' gak pernah kesimpen ke server.
-  // Akibatnya progress bar di Anterin nyangkut di step "Diproses" sepanjang
-  // kurir jalan, padahal pesanan udah difisik diantar.
-  // Utk pesanan delivery, klik "Tandai Diproses" sekarang langsung nyimpen
-  // status 'Dikirim' (satu aksi kasir = dapur kelar + kurir jalan, sesuai alur
-  // 1-tombol yang dipake app ini). Pesanan pickup tetep 'Diproses' seperti
-  // semula (gak ada tahap antar buat pickup).
+  // Tahap 1 -> 2: "Menunggu Konfirmasi" -> "Diproses". Berlaku sama buat
+  // delivery maupun pickup; cetak struk otomatis cuma jalan buat delivery.
   async function markProcessed(id){
     var c = client();
-    var order = pending.find(function(o){ return o.id === id; });
-    var isDelivery = !!(order && order.deliveryType === 'delivery');
-    var newStatus = isDelivery ? 'Dikirim' : 'Diproses';
     try{
-      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: newStatus });
+      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: 'Diproses' });
+      var order = pending.find(function(o){ return o.id === id; });
       pending = pending.filter(function(o){ return o.id !== id; });
-      if(order && isDelivery){
-        if(!delivering.some(function(o){ return o.id === id; })) delivering.unshift(order);
-        autoPrintReceipt(order); // gak di-await -- gak nahan UI nunggu printer
+      if(order){
+        if(!processing.some(function(o){ return o.id === id; })) processing.unshift(order);
+        if(order.deliveryType === 'delivery') autoPrintReceipt(order); // gak di-await -- gak nahan UI nunggu printer
       }
       updateBadge(); renderList();
     }catch(e){
@@ -1128,16 +1166,40 @@ if('serviceWorker' in navigator){
     }
   }
 
-  // Nandain pesanan delivery yang lagi "Sedang Diantar" (status 'Dikirim')
-  // sebagai kelar/sampe -> status 'Selesai'. Kalau backend nolak/nama
-  // statusnya beda, sesuaikan string 'Selesai' di bawah ini biar cocok sama
-  // yg dipake pesananUpdateStatus_ di Code.gs.
+  // Tahap 2 -> 3: "Diproses" -> "Dikirim". Status yang dikirim ke backend
+  // sama persis buat delivery & pickup ("Dikirim") -- cuma label tombol &
+  // tampilan kartunya yang beda (Sedang Diantar vs Siap Diambil), soalnya
+  // status ini yang sebelumnya kekonfirmasi ada tapi gak pernah kepake.
+  async function markShipping(id){
+    var c = client();
+    try{
+      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: 'Dikirim' });
+      var order = processing.find(function(o){ return o.id === id; });
+      processing = processing.filter(function(o){ return o.id !== id; });
+      if(order){
+        if(!shipping.some(function(o){ return o.id === id; })) shipping.unshift(order);
+      }
+      renderList();
+    }catch(e){
+      console.warn('[wbnc] gagal tandai dikirim:', e.message);
+      renderList(); // balikin tombol biar bisa dicoba lagi
+    }
+  }
+
+  // Tahap 3 -> 4: "Dikirim" -> "Selesai" (final). Berlaku sama buat pesanan
+  // yang lagi "Sedang Diantar" maupun "Siap Diambil".
+  // CATATAN: nilai status 'Selesai' ini nebak ikut pola yang udah ada
+  // (Menunggu Konfirmasi -> Diproses -> Dikirim), soalnya OnlineOrders.gs
+  // (backend) gak ikut dikirim jadi gak kelihatan status apa aja yg
+  // diterima di sana. Kalau backend nolak/nama statusnya beda, sesuaikan
+  // string 'Selesai' di bawah ini biar cocok sama yg dipake
+  // pesananUpdateStatus_ di Code.gs.
   async function markDone(id){
     var c = client();
     try{
       await rawCall('pesanan.updateStatus', c._token(), { id: id, status: 'Selesai' });
-      delivering = delivering.filter(function(o){ return o.id !== id; });
-      updateBadge(); renderList();
+      shipping = shipping.filter(function(o){ return o.id !== id; });
+      renderList();
       showSimpleToast('\u2705', 'Pesanan ditandai selesai.');
     }catch(e){
       console.warn('[wbnc] gagal tandai selesai:', e.message);
@@ -1178,34 +1240,59 @@ if('serviceWorker' in navigator){
       // (mis. diproses lewat halaman lain / perangkat lain).
       pending = pending.filter(function(o){ return freshIds[o.id]; });
 
-      // Sinkronin "Sedang Diantar" dari data asli (status Dikirim & delivery)
-      // biar tetep akurat lintas perangkat/reload -- TIDAK memicu cetak ulang,
-      // cetak cuma jalan sekali pas transisi lewat tombol "Tandai Diproses".
+      // Sinkronin "Sedang Diproses" dari data asli (status Diproses, delivery
+      // MAUPUN pickup) biar tetep akurat lintas perangkat/reload -- TIDAK
+      // memicu cetak ulang, cetak cuma jalan sekali pas transisi lewat
+      // tombol "Tandai Diproses".
       try{
-        var res2 = await c.from('transactions').select().eq('source', 'online')
-          .eq('status', 'Dikirim').eq('delivery_type', 'delivery');
+        var res2 = await c.from('transactions').select().eq('source', 'online').eq('status', 'Diproses');
         if(!res2.error){
-          var dRows = res2.data || [];
-          delivering = dRows.map(function(row){
-            var existing = delivering.find(function(o){ return o.id === row.id; });
+          var pRows = res2.data || [];
+          processing = pRows.map(function(row){
+            var existing = processing.find(function(o){ return o.id === row.id; });
             return {
               id: row.id,
               code: row.code || (existing && existing.code) || null,
               nama: row.customer_name,
               items: row.transaction_items || [],
               total: row.total,
-              metode: 'Delivery \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
+              metode: (row.delivery_type === 'delivery' ? 'Delivery' : 'Pickup') + ' \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
               waktu: fmtWaktu(row.created_at),
               alamat: pickAddress(row),
               deliveryType: row.delivery_type
             };
           });
           // Jaga id yang barusan ditandai diproses di sesi ini tapi belum
-          // sempet ke-refetch server (hindari kartu "Sedang Diantar" kedip
-          // ilang-muncul).
-          delivering.forEach(function(o){ printedIds.add(o.id); });
+          // sempet ke-refetch server (hindari kartu "Sedang Diproses" kedip
+          // ilang-muncul, dan cegah cetak struk dobel kalau reload).
+          processing.forEach(function(o){ printedIds.add(o.id); });
         }
-      }catch(e2){ console.warn('[wbnc] sync sedang-diantar gagal:', e2.message); }
+      }catch(e2){ console.warn('[wbnc] sync sedang-diproses gagal:', e2.message); }
+
+      // Sinkronin "Sedang Diantar" / "Siap Diambil" dari data asli (status
+      // Dikirim, delivery MAUPUN pickup) -- sama kayak di atas, TIDAK
+      // memicu cetak ulang.
+      try{
+        var res3 = await c.from('transactions').select().eq('source', 'online').eq('status', 'Dikirim');
+        if(!res3.error){
+          var dRows = res3.data || [];
+          shipping = dRows.map(function(row){
+            var existing = shipping.find(function(o){ return o.id === row.id; });
+            return {
+              id: row.id,
+              code: row.code || (existing && existing.code) || null,
+              nama: row.customer_name,
+              items: row.transaction_items || [],
+              total: row.total,
+              metode: (row.delivery_type === 'delivery' ? 'Delivery' : 'Pickup') + ' \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
+              waktu: fmtWaktu(row.created_at),
+              alamat: pickAddress(row),
+              deliveryType: row.delivery_type
+            };
+          });
+          shipping.forEach(function(o){ printedIds.add(o.id); });
+        }
+      }catch(e3){ console.warn('[wbnc] sync sedang-diantar/diambil gagal:', e3.message); }
 
       updateBadge();
       if(panel.classList.contains('open')) renderList();
