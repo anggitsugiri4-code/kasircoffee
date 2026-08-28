@@ -1296,25 +1296,21 @@ if('serviceWorker' in navigator){
     // DOM dialog jadi gak ke-block sama outside-click guard punya Radix Dialog
     // (yang bikin dia gak bisa diklik pas posisinya cuma "position:fixed" lepas).
 
-    // ---------- cari & tempelin fab di field "Kategori" form Tambah/Edit Produk ----------
-    // (bukan nempel form Kategori Pengeluaran, yang teksnya sama tapi beda dialog)
-    function findProductKategoriLabel() {
-      var dialogs = document.querySelectorAll('[role="dialog"]');
-      for (var i = 0; i < dialogs.length; i++) {
-        var d = dialogs[i];
-        var t = d.textContent || '';
-        if (t.indexOf('Nama Produk') === -1) continue; // pastikan ini dialog Tambah/Edit Produk
-        if (t.indexOf('Tambah Produk') === -1 && t.indexOf('Edit Produk') === -1) continue;
-        var nodes = d.querySelectorAll('label,span,div,p');
-        for (var j = 0; j < nodes.length; j++) {
-          var node = nodes[j];
-          // Kalau fab udah nempel di node ini, tetep anggap ketemu.
-          // (Sebelumnya cuma cek children.length===0, padahal abis fab
-          // nempel children jadi 1 -> tiap 200ms dianggap "ga ketemu" ->
-          // fab dicopot -> children balik 0 -> ketemu lagi -> nempel lagi
-          // -> looping copot-tempel yg keliatan kedap-kedip.)
-          if (node.children.length === 1 && node.children[0] === fab) return node;
-          if (node.children.length === 0 && node.textContent.trim() === 'Kategori') return node;
+    // ---------- cari & tempelin fab di samping tombol "+ Produk" di header list Kelola Produk ----------
+    // (di-scope ke row header-nya doang, soalnya ada juga tab bottom-nav yg
+    // labelnya "Produk" thok — kalo dicari global bisa salah nyantol ke situ)
+    function findProdukListHeaderButton() {
+      var h1s = document.querySelectorAll('h1');
+      for (var i = 0; i < h1s.length; i++) {
+        var h1 = h1s[i];
+        if ((h1.textContent || '').trim() !== 'Kelola Produk') continue;
+        var row = h1.parentElement;
+        if (!row) continue;
+        var btns = row.querySelectorAll('button');
+        for (var j = 0; j < btns.length; j++) {
+          var b = btns[j];
+          if (b === fab) continue;
+          if ((b.textContent || '').trim() === 'Produk') return { row: row, header: h1, btn: b };
         }
       }
       return null;
@@ -1323,7 +1319,9 @@ if('serviceWorker' in navigator){
     // Ambil nama kategori yg lagi kepilih di form Tambah/Edit Produk SAAT INI,
     // walau produknya belum disimpan (belum klik "Tambah Produk"). Kategori
     // disimpan terpisah di tabel "categories", jadi foto bisa langsung
-    // diupload duluan tanpa nunggu produk ke-save.
+    // diupload duluan tanpa nunggu produk ke-save. (Cuma kepake kalo dialog-nya
+    // kebetulan lagi kebuka pas fab diklik; kalo enggak, fungsi ini balikin null
+    // dan daftar kategori tetep jalan normal dari database.)
     function getLiveFormCategory() {
       var dialogs = document.querySelectorAll('[role="dialog"]');
       for (var i = 0; i < dialogs.length; i++) {
@@ -1341,16 +1339,19 @@ if('serviceWorker' in navigator){
     }
 
     function syncFabAttach() {
-      var label = findProductKategoriLabel();
-      if (!label) {
+      var found = findProdukListHeaderButton();
+      if (!found) {
         if (fab.parentNode) fab.parentNode.removeChild(fab);
         return;
       }
-      if (fab.parentNode === label) return; // udah nempel bener, gak usah diapa-apain lagi
-      label.style.display = 'flex';
-      label.style.alignItems = 'center';
-      label.style.gap = '6px';
-      label.appendChild(fab);
+      var row = found.row, header = found.header, btn = found.btn;
+      if (fab.parentNode === row) return; // udah nempel bener, gak usah diapa-apain lagi
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'flex-end';
+      row.style.gap = '8px';
+      header.style.marginRight = 'auto'; // dorong judul "Kelola Produk" tetep di kiri
+      row.appendChild(fab); // masuk setelah tombol +Produk -> nempel di sampingnya
       fab.style.display = 'flex';
     }
     setInterval(syncFabAttach, 200);
