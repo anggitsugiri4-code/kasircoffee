@@ -800,13 +800,17 @@ if('serviceWorker' in navigator){
    TAMBAHAN: Pesanan delivery -> "Sedang Diantar" + cetak struk otomatis
    ---------------------------------------------------------------------
    - Pas "Tandai Diproses" dipencet buat pesanan delivery_type==='delivery',
-     order itu dipindah ke daftar "Sedang Diantar" (nampilin alamat kirim +
-     isi pesanan) DAN langsung nyoba cetak struk otomatis lewat printer
+     status transaksi disimpen sbg 'Dikirim' (BUKAN 'Diproses' -- backend
+     punya 4 status Menunggu Konfirmasi -> Diproses -> Dikirim -> Selesai,
+     jadi klik ini mewakili "dapur kelar + kurir jalan" sekaligus). Order
+     itu dipindah ke daftar "Sedang Diantar" (nampilin alamat kirim + isi
+     pesanan) DAN langsung nyoba cetak struk otomatis lewat printer
      Bluetooth yang udah kesambung (pakai window.btPrintReceipt, di-expose
      dari <script type="module"> pertama -- lihat baris deket btPrintReceipt
-     asli). Pesanan pickup gak diikutin ke daftar ini, sesuai perilaku lama.
+     asli). Pesanan pickup tetep pakai status 'Diproses' seperti biasa,
+     gak diikutin ke daftar ini, sesuai perilaku lama.
    - Daftar "Sedang Diantar" disinkronin ulang tiap poll dari data asli
-     (status='Diproses' & delivery_type='delivery') biar tetep akurat
+     (status='Dikirim' & delivery_type='delivery') biar tetep akurat
      walau halaman di-reload -- tapi cetak struk CUMA dipicu sekali pas
      transisi awal (klik tombol), bukan tiap poll, biar gak boros kertas.
    - ASUMSI nama kolom alamat: baris transaksi belum kelihatan punya field
@@ -1096,13 +1100,24 @@ if('serviceWorker' in navigator){
     }
   }
 
+  // FIX: backend punya 4 status (Menunggu Konfirmasi -> Diproses -> Dikirim ->
+  // Selesai), tapi sebelumnya kode ini cuma pernah nulis 'Diproses' lalu lompat
+  // langsung ke 'Selesai' -- status 'Dikirim' gak pernah kesimpen ke server.
+  // Akibatnya progress bar di Anterin nyangkut di step "Diproses" sepanjang
+  // kurir jalan, padahal pesanan udah difisik diantar.
+  // Utk pesanan delivery, klik "Tandai Diproses" sekarang langsung nyimpen
+  // status 'Dikirim' (satu aksi kasir = dapur kelar + kurir jalan, sesuai alur
+  // 1-tombol yang dipake app ini). Pesanan pickup tetep 'Diproses' seperti
+  // semula (gak ada tahap antar buat pickup).
   async function markProcessed(id){
     var c = client();
+    var order = pending.find(function(o){ return o.id === id; });
+    var isDelivery = !!(order && order.deliveryType === 'delivery');
+    var newStatus = isDelivery ? 'Dikirim' : 'Diproses';
     try{
-      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: 'Diproses' });
-      var order = pending.find(function(o){ return o.id === id; });
+      await rawCall('pesanan.updateStatus', c._token(), { id: id, status: newStatus });
       pending = pending.filter(function(o){ return o.id !== id; });
-      if(order && order.deliveryType === 'delivery'){
+      if(order && isDelivery){
         if(!delivering.some(function(o){ return o.id === id; })) delivering.unshift(order);
         autoPrintReceipt(order); // gak di-await -- gak nahan UI nunggu printer
       }
@@ -1113,12 +1128,10 @@ if('serviceWorker' in navigator){
     }
   }
 
-  // Nandain pesanan delivery yang lagi "Sedang Diantar" sebagai kelar/sampe.
-  // CATATAN: nilai status 'Selesai' ini nebak ikut pola yang udah ada
-  // (Menunggu Konfirmasi -> Diproses), soalnya OnlineOrders.gs (backend)
-  // gak ikut dikirim jadi gak kelihatan status apa aja yg diterima di sana.
-  // Kalau backend nolak/nama statusnya beda, sesuaikan string 'Selesai' di
-  // bawah ini biar cocok sama yg dipake pesananUpdateStatus_ di Code.gs.
+  // Nandain pesanan delivery yang lagi "Sedang Diantar" (status 'Dikirim')
+  // sebagai kelar/sampe -> status 'Selesai'. Kalau backend nolak/nama
+  // statusnya beda, sesuaikan string 'Selesai' di bawah ini biar cocok sama
+  // yg dipake pesananUpdateStatus_ di Code.gs.
   async function markDone(id){
     var c = client();
     try{
@@ -1165,12 +1178,12 @@ if('serviceWorker' in navigator){
       // (mis. diproses lewat halaman lain / perangkat lain).
       pending = pending.filter(function(o){ return freshIds[o.id]; });
 
-      // Sinkronin "Sedang Diantar" dari data asli (status Diproses & delivery)
+      // Sinkronin "Sedang Diantar" dari data asli (status Dikirim & delivery)
       // biar tetep akurat lintas perangkat/reload -- TIDAK memicu cetak ulang,
       // cetak cuma jalan sekali pas transisi lewat tombol "Tandai Diproses".
       try{
         var res2 = await c.from('transactions').select().eq('source', 'online')
-          .eq('status', 'Diproses').eq('delivery_type', 'delivery');
+          .eq('status', 'Dikirim').eq('delivery_type', 'delivery');
         if(!res2.error){
           var dRows = res2.data || [];
           delivering = dRows.map(function(row){
