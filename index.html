@@ -1298,19 +1298,6 @@ if('serviceWorker' in navigator){
 
     // ---------- cari & tempelin fab di field "Kategori" form Tambah/Edit Produk ----------
     // (bukan nempel form Kategori Pengeluaran, yang teksnya sama tapi beda dialog)
-    // Ambil teks milik elemen itu sendiri doang (text node langsung),
-    // abaikan teks yang nyumbang dari elemen anak (mis. fab yang udah nempel).
-    // Ini yang bikin match tetap stabil walau fab udah jadi child si label —
-    // sebelumnya pake `children.length===0` yang jadi false begitu fab nempel,
-    // bikin label dianggap "ilang", fab dicabut, next tick ketemu lagi, dst
-    // (loop tempel-cabut tiap 200ms = kedap-kedip).
-    function ownText(el) {
-      var t = '';
-      for (var k = 0; k < el.childNodes.length; k++) {
-        if (el.childNodes[k].nodeType === 3) t += el.childNodes[k].textContent;
-      }
-      return t.trim();
-    }
     function findProductKategoriLabel() {
       var dialogs = document.querySelectorAll('[role="dialog"]');
       for (var i = 0; i < dialogs.length; i++) {
@@ -1320,8 +1307,14 @@ if('serviceWorker' in navigator){
         if (t.indexOf('Tambah Produk') === -1 && t.indexOf('Edit Produk') === -1) continue;
         var nodes = d.querySelectorAll('label,span,div,p');
         for (var j = 0; j < nodes.length; j++) {
-          if (nodes[j] === fab || nodes[j].contains(fab)) continue; // skip fab sendiri / turunannya
-          if (ownText(nodes[j]) === 'Kategori') return nodes[j];
+          var node = nodes[j];
+          // Kalau fab udah nempel di node ini, tetep anggap ketemu.
+          // (Sebelumnya cuma cek children.length===0, padahal abis fab
+          // nempel children jadi 1 -> tiap 200ms dianggap "ga ketemu" ->
+          // fab dicopot -> children balik 0 -> ketemu lagi -> nempel lagi
+          // -> looping copot-tempel yg keliatan kedap-kedip.)
+          if (node.children.length === 1 && node.children[0] === fab) return node;
+          if (node.children.length === 0 && node.textContent.trim() === 'Kategori') return node;
         }
       }
       return null;
