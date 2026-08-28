@@ -1319,6 +1319,27 @@ if('serviceWorker' in navigator){
       }
       return null;
     }
+
+    // Ambil nama kategori yg lagi kepilih di form Tambah/Edit Produk SAAT INI,
+    // walau produknya belum disimpan (belum klik "Tambah Produk"). Kategori
+    // disimpan terpisah di tabel "categories", jadi foto bisa langsung
+    // diupload duluan tanpa nunggu produk ke-save.
+    function getLiveFormCategory() {
+      var dialogs = document.querySelectorAll('[role="dialog"]');
+      for (var i = 0; i < dialogs.length; i++) {
+        var d = dialogs[i];
+        var t = d.textContent || '';
+        if (t.indexOf('Nama Produk') === -1) continue;
+        if (t.indexOf('Tambah Produk') === -1 && t.indexOf('Edit Produk') === -1) continue;
+        var combo = d.querySelector('button[role="combobox"]');
+        if (combo) {
+          var val = (combo.textContent || '').trim();
+          if (val) return val;
+        }
+      }
+      return null;
+    }
+
     function syncFabAttach() {
       var label = findProductKategoriLabel();
       if (!label) {
@@ -1385,6 +1406,11 @@ if('serviceWorker' in navigator){
         var names = {};
         products.forEach(function (p) { if (p.category) names[p.category] = true; });
         existingCats.forEach(function (c) { if (c.name) names[c.name] = true; });
+
+        var liveCat = getLiveFormCategory();
+        var liveCatIsDraft = !!(liveCat && !names[liveCat]);
+        if (liveCat) names[liveCat] = true;
+
         var nameList = Object.keys(names).sort();
 
         if (!nameList.length) {
@@ -1393,13 +1419,13 @@ if('serviceWorker' in navigator){
         }
 
         list.innerHTML = '';
-        nameList.forEach(function (name) { list.appendChild(buildRow(name)); });
+        nameList.forEach(function (name) { list.appendChild(buildRow(name, name === liveCat && liveCatIsDraft)); });
       }).catch(function (err) {
         list.innerHTML = '<div style="padding:20px 0;text-align:center;color:#ff8a80;font-size:13px;">Gagal memuat: ' + (err.message || err) + '</div>';
       });
     }
 
-    function buildRow(name) {
+    function buildRow(name, isDraft) {
       var existing = existingCats.filter(function (c) { return c.name === name; })[0];
       var row = document.createElement('div');
       row.className = 'catphoto-row';
@@ -1416,7 +1442,7 @@ if('serviceWorker' in navigator){
 
       var label = document.createElement('div');
       label.className = 'catphoto-name';
-      label.textContent = name;
+      label.textContent = name + (isDraft ? ' (belum disimpan)' : '');
 
       var btn = document.createElement('button');
       btn.className = 'catphoto-btn';
