@@ -1002,13 +1002,17 @@ if('serviceWorker' in navigator){
       // ngosongin inline style, jadi balik lagi ke rule CSS "#wbnc-home-dot{display:none}"
       // di atas (makanya badge-nya kosong mulu walau ada pesanan masuk).
       // Harus di-set eksplisit ke 'flex' biar bener2 override.
-      if(pending.length > 0){
-        dot.textContent = pending.length > 9 ? '9+' : String(pending.length);
-        dot.style.display = 'flex';
-      } else {
-        dot.textContent = '';
-        dot.style.display = 'none';
-      }
+      var newText = pending.length > 0 ? (pending.length > 9 ? '9+' : String(pending.length)) : '';
+      // FIX: dot.textContent = ... SELALU bongkar-pasang child node biarpun
+      // isinya sama persis (lihat spek DOM "replace all"). Node itu ada di
+      // dalam document.body yang lagi diawasin resyncObserver (childList+
+      // subtree), jadi tiap panggilan ini bikin observer ke-trigger lagi ->
+      // observer manggil updateBadge() lagi -> nulis textContent lagi ->
+      // observer ke-trigger lagi -> lomba tanpa akhir & tab jadi macet.
+      // Guard di bawah ini nyegah nulis DOM kalau isinya emang gak berubah,
+      // jadi rantai mutation->observer->mutation-nya keputus.
+      if(dot.textContent !== newText) dot.textContent = newText;
+      dot.style.display = pending.length > 0 ? 'flex' : 'none';
     }
     var bell = bellEl();
     if(bell) bell.setAttribute('aria-label', pending.length > 0 ? ('Notifikasi pesanan online, ' + pending.length + ' menunggu') : 'Notifikasi pesanan online');
