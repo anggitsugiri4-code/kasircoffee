@@ -151,6 +151,10 @@ html,body,#root{height:100dvh}
     return Promise.resolve({ data: null, error: { message: "RPC tidak dikenal: " + name } });
   };
 
+  AppScriptClient.prototype.uploadMedia = function (dataUrl, oldUrl) {
+    return call("media.upload", this._token(), { dataUrl: dataUrl, oldUrl: oldUrl });
+  };
+
   window.AppScriptClient = AppScriptClient;
 })();
 </script>
@@ -739,7 +743,7 @@ function iPromo({onBack:e}){
       if(!f)return;
       t.target.value="";
       setCardBusy(b=>b.map((v,i)=>i===idx?!0:v));
-      compressImageForPromo_(f,640,0.72).then(function(url){ updateCard(idx,"gambar",url); setCardBusy(b=>b.map((v,i)=>i===idx?!1:v)); }).catch(function(){ setCardBusy(b=>b.map((v,i)=>i===idx?!1:v)); alert("Gagal proses gambar, coba foto lain."); });
+      compressImageForPromo_(f,640,0.72).then(function(dataUrl){ return sb.uploadMedia(dataUrl, cards[idx].gambar); }).then(function(res){ setCardBusy(b=>b.map((v,i)=>i===idx?!1:v)); if(res.error){ alert("Gagal upload gambar: "+res.error.message); return; } updateCard(idx,"gambar",res.data.url); }).catch(function(){ setCardBusy(b=>b.map((v,i)=>i===idx?!1:v)); alert("Gagal proses gambar, coba foto lain."); });
     },
     save=()=>{upd({cards:cards}),e()};
   return(0,k.jsxs)("div",{className:"absolute inset-0 z-50 flex flex-col bg-ground",children:[
