@@ -74,8 +74,9 @@ html,body,#root{height:100dvh}
   Query.prototype.maybeSingle = function () { this.wantMaybeSingle = true; return this; };
   Query.prototype.insert = function (data) { this.op = "insert"; this.insertPayload = data; return this; };
   Query.prototype.update = function (data) { this.op = "update"; this.updatePayload = data; return this; };
+  Query.prototype.delete = function () { this.op = "delete"; return this; };
   Query.prototype._exec = function () {
-    var actionMap = { select: "table.select", insert: "table.insert", update: "table.update" };
+    var actionMap = { select: "table.select", insert: "table.insert", update: "table.update", delete: "table.delete" };
     var payload = {
       table: this.table,
       filters: this.filters,
