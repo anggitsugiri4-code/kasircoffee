@@ -24142,7 +24142,7 @@ function btEscposBytes(biz, tx, pw) {
   }) + " " + d.toLocaleTimeString("id-ID", {
     hour: "2-digit",
     minute: "2-digit"
-  })), line("No: " + tx.code), push(27, 97, 0), line("-".repeat(W)), tx.items.forEach(it => line(pad(it.name + " x" + it.qty, z(it.price * it.qty)))), line("-".repeat(W)), tx.discountTotal > 0 && line(pad("Diskon Promo", "-" + z(tx.discountTotal))), push(27, 69, 1), line(pad("Total", z(tx.total))), push(27, 69, 0), line("Metode: " + tx.method), "Tunai" === tx.method && tx.cashReceived && (line(pad("Tunai", z(tx.cashReceived))), line(pad("Kembali", z(tx.change || 0)))), line("-".repeat(W)), push(27, 97, 1), line("Terima kasih!"), push(10, 10, 10, 10);
+  })), line("No: " + tx.code), push(27, 97, 0), line("-".repeat(W)), tx.items.forEach(it => line(pad(it.name + " x" + it.qty, z(it.price * it.qty)))), tx.note && line("Catatan: " + tx.note), line("-".repeat(W)), tx.discountTotal > 0 && line(pad("Diskon Promo", "-" + z(tx.discountTotal))), push(27, 69, 1), line(pad("Total", z(tx.total))), push(27, 69, 0), line("Metode: " + tx.method), "Tunai" === tx.method && tx.cashReceived && (line(pad("Tunai", z(tx.cashReceived))), line(pad("Kembali", z(tx.change || 0)))), line("-".repeat(W)), push(27, 97, 1), line("Terima kasih!"), push(10, 10, 10, 10);
   return new Uint8Array(out)
 }
 async function btWrite(ch, bytes) {
@@ -24711,6 +24711,14 @@ if('serviceWorker' in navigator){
   function pickAddress(row){
     return row.address || row.Alamat || row.delivery_address || 'Alamat belum tersedia dari sistem';
   }
+  // Catatan tambahan dari customer (diisi pas checkout di Anterin, field
+  // "catatan" pada apiBuatPesananOnlinePublik -> disimpan backend sbg
+  // transactions.notes, lihat SHEET_SCHEMAS di Code.gs). Kolom asli udah
+  // kekonfirmasi sekarang -- row.notes ditaro paling depan, sisanya
+  // fallback jaga-jaga jalur lain (sama pola kayak pickAddress).
+  function pickNote(row){
+    return row.notes || row.note || row.catatan || row.Catatan || '';
+  }
 
   function orderCard(o, opts){
     var itemsTxt = (o.items || []).map(function(it){ return it.qty + 'x ' + it.name; }).join(', ');
@@ -24894,7 +24902,8 @@ if('serviceWorker' in navigator){
         return { name: it.name || 'Item', qty: it.qty || 1, price: it.price || 0 };
       }),
       total: order.total || 0,
-      method: order.metode || 'Online'
+      method: order.metode || 'Online',
+      note: order.note || ''
     };
     try{
       await window.btPrintReceipt(biz, txForPrint, paperWidth);
@@ -24985,6 +24994,7 @@ if('serviceWorker' in navigator){
           metode: (row.delivery_type === 'delivery' ? 'Delivery' : 'Pickup') + ' \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
           waktu: fmtWaktu(row.created_at),
           alamat: pickAddress(row),
+          note: pickNote(row),
           deliveryType: row.delivery_type
         };
         var existingIdx = pending.findIndex(function(o){ return o.id === row.id; });
@@ -25014,6 +25024,7 @@ if('serviceWorker' in navigator){
               metode: (row.delivery_type === 'delivery' ? 'Delivery' : 'Pickup') + ' \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
               waktu: fmtWaktu(row.created_at),
               alamat: pickAddress(row),
+              note: pickNote(row),
               deliveryType: row.delivery_type
             };
           });
@@ -25042,6 +25053,7 @@ if('serviceWorker' in navigator){
               metode: (row.delivery_type === 'delivery' ? 'Delivery' : 'Pickup') + ' \u2022 ' + (row.method === 'transfer' ? 'Transfer' : 'COD'),
               waktu: fmtWaktu(row.created_at),
               alamat: pickAddress(row),
+              note: pickNote(row),
               deliveryType: row.delivery_type
             };
           });
