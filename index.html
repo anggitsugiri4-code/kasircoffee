@@ -10323,11 +10323,24 @@ function H({
       })
     }
   }, [r]), h = (0, S.useCallback)(e => {
-    a(t => t.filter(t => t.id !== e)), l(t => t.filter(t => t.productId !== e));
+    if (!confirm("Hapus produk ini? Data yang sudah dihapus tidak bisa dikembalikan.")) return;
+    let removedProduct = null, removedCartItems = [];
+    a(t => {
+      removedProduct = t.find(t => t.id === e) || null;
+      return t.filter(t => t.id !== e)
+    }), l(t => {
+      removedCartItems = t.filter(t => t.productId === e);
+      return t.filter(t => t.productId !== e)
+    });
     BIZ_ID && sb.from("products").delete().eq("id", e).then(({
       error: t
     }) => {
-      t && console.error("removeProduct sync failed", t)
+      if (t) {
+        console.error("removeProduct sync failed", t);
+        removedProduct && a(list => list.some(p => p.id === e) ? list : [...list, removedProduct]);
+        removedCartItems.length && l(list => [...list, ...removedCartItems]);
+        alert("Gagal menghapus produk: " + (t.message || "coba lagi"))
+      }
     })
   }, []), g = (0, S.useCallback)(e => {
     l(t => t.find(t => t.productId === e) ? t.map(t => t.productId === e ? {
